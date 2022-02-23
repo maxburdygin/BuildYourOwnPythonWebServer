@@ -4,6 +4,37 @@ import os
 from datetime import datetime
 
 
+class base_case(object):
+    '''Parent for case handlers.'''
+
+    def handle_file(self, handler, full_path):
+        try:
+            with open(full_path, 'rb') as reader:
+                content = reader.read()
+            handler.send_content(content)
+        except IOError as msg:
+            msg = "'{0}' cannot be read: {1}".format(full_path, msg)
+            handler.handle_error(msg)
+
+    def index_path(self, handler):
+        return os.path.join(handler.full_path, 'index.html')
+
+    def test(self, handler):
+        assert False, 'Not implemented.'
+
+    def act(self, handler):
+        assert False, 'Not implemented.'
+
+class case_existing_file(base_case):
+    '''File exists.'''
+
+    def test(self, handler):
+        return os.path.isfile(handler.full_path)
+
+    def act(self, handler):
+        self.handle_file(handler, handler.full_path)
+
+
 class case_no_file(object):
     '''File or directory does not exist.'''
 
@@ -12,16 +43,6 @@ class case_no_file(object):
 
     def act(self, handler):
         raise Exception("'{0}' not found".format(handler.path))
-
-
-class case_existing_file(object):
-    '''File exists.'''
-
-    def test(self, handler):
-        return os.path.isfile(handler.full_path)
-
-    def act(self, handler):
-        handler.handle_file(handler.full_path)
 
 
 class case_always_fail(object):
@@ -72,24 +93,25 @@ class case_cgi_file(object):
 
 
 class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
-    '''Handle HTTP requests by returning a fixed 'page'.'''
 
-    Cases = [case_no_file,
-             case_cgi_file,
-             case_existing_file,
-             case_directory_index_file,
-             case_directory_no_index_file,
-             case_always_fail]
+    Cases = [case_no_file(),
+             case_cgi_file(),
+             case_existing_file(),
+             case_directory_index_file(),
+             case_directory_no_index_file(),
+             case_always_fail()]
 
+    # How to display an error.
     Error_Page = """\
-                <html>
-                <body>
-                <h1>Error accessing {path}</h1>
-                <p>{msg}</p>
-                </body>
-                <tml>
-                """
+        <html>
+        <body>
+        <h1>Error accessing {path}</h1>
+        <p>{msg}</p>
+        </body>
+        </html>
+        """
 
+    # Classify and handle request.
     def do_GET(self):
         try:
 
@@ -98,25 +120,15 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
             # Figure out how to handle it.
             for case in self.Cases:
-                handler = case()
-                if handler.test(self):
-                    handler.act(self)
+                if case.test(self):
+                    case.act(self)
                     break
 
         # Handle errors.
         except Exception as msg:
             self.handle_error(msg)
 
-    def handle_file(self, full_path):
-        try:
-            with open(full_path, 'rb') as reader:
-                content = reader.read()
-            self.send_content(content)
-        except IOError as msg:
-            msg = "'{0}' cannot be read: {1}".format(self.path, msg)
-            self.handle_error(msg)
-
-        # Handle unknown objects.
+    # Handle unknown objects.
     def handle_error(self, msg):
         content = self.Error_Page.format(path=self.path, msg=msg)
         self.send_content(content, 404)
@@ -128,6 +140,9 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(content)))
         self.end_headers()
         self.wfile.write(content)
+
+
+
 
         # How to display a directory listing.
     Listing_Page = '''\
@@ -159,6 +174,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         data = child_stdout.read()
         child_stdout.close()
         self.send_content(data)
+
 
 
 #----------------------------------------------------------------------
